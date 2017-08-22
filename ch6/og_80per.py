@@ -75,24 +75,33 @@ tol = 1e-9
 xi = 0.2
 
 # Initial guess for capital stock
-b1vec = 0.93 * b_ss
+b1vec = 0.93 * b_ss # Starting distribution of wealth
 K1 = get_K(b1vec)
 Kpath_old = np.zeros(T + S - 1)
-Kpath_old[:T] = np.linspace(K1, K_ss, T)
+Kpath_old[:T] = np.linspace(K1, K_ss, T) # Until reaching steady state
 Kpath_old[T:] = K_ss
 
-# Euler function error 
+# Euler function error
+'''
+Calculate lifetime uler function error. Remaining lifetime can be of varying length p.
+bvec is of length p-1.
+
+'''
+
 def get_errors(bvec, *args):
-    b_pre, nvec, beta, sigma, w_path, r_path = args
-    b1 = np.append(b_pre, bvec)
+    beg_wealth, nvec, beta, sigma, w_path, r_path = args
+    b1 = np.append(beg_wealth, bvec)
     b2 = np.append(bvec, 0)
-    c = (1 + rpath) * b1 + wpath * nvec - b2
+    c = (1 + r_path) * b1 + w_path * nvec - b2
     muc = c ** (-sigma)
-    errors = muc[:-1] - beta * (1 + rpath[1:]) * muc[1:]
+    errors = muc[:-1] - beta * (1 + r_path[1:]) * muc[1:]
     return errors
 
+
+# Begin TPI
+
 abs2 = 1
-tpi_iter = 1
+tpi_iter = 0
 while abs2 > tol and tpi_iter < max_iter:
     tpi_iter = tpi_iter + 1
     w_path = get_w(Kpath_old, L_ss, (A, alpha))
@@ -100,53 +109,50 @@ while abs2 > tol and tpi_iter < max_iter:
     # Initialize savings matrix
     b = np.zeros((S - 1, T + S - 1))
     b[:, 0] = b1vec
-    # solve for b32
-    for
-    for t in range(T - 1):
-        bvec_guess = np.array([b[0, t], b[1, t + 1]])
-        bt = opt.root(get_errors, bvec_guess, (nvec, beta, sigma, w_path[t : t + 3], r_path[t + 1: t + 3]))
-        b[0, t + 1] = bt.x[0]
-        b[1, t + 2] = bt.x[1]
+    # Solve the incomplete remaining lifetime decisions of agents alive
+    # in period t=1 but not born in period t=1
+    for p in range(2, S):
+        bvec_guess = np.diagonal(b[S - p:, :p - 1]) # Initial guess of the lifetime saving path who has p periods to live
+        beg_wealth = b[S - p - 1, 0]
+        args_bp = (beg_wealth, nvec[-p:], beta, sigma, w_path[:p], r_path[:p])
+        bp = opt.root(get_errors, bvec_guess, args = (args_bp)).x
+    # Insert the vector lifetime solutions diagonally (twist donut)
+        DiagMaskbp = np.eye(p - 1)
+        bp_path = DiagMaskbp * bp
+        b[S - p:, 1:p] += bp_path
+
+    # Solve for complete lifetime decisions of agents born in periods
+    # 1 to T and insert the vector lifetime solutions diagonally (twist
+    # donut) into the cpath, bpath, and EulErrPath matrices
+    for t in range(1, T + 1):
+        bvec_guess = np.diagonal(b[:, t - 1:S + t - 2])
+        args_bt = (0, nvec, beta, sigma, w_path[t - 1 : S + t - 1], r_path[t - 1 : S + t - 1])
+        bt = opt.root(get_errors, bvec_guess, args = (args_bt)).x
+        DiagMaskbt = np.eye(S - 1)
+        bt_path = DiagMaskbt * bt
+        b[:, t: S + t - 1] += bt_path
+
     # Calculate the implied capital stock from conjecture and the error
     Kpath_new = b.sum(axis = 0)
-    abs2 = ((Kpath_old[:] - Kpath_new[:]) ** 2).sum()
+    abs2 = ((Kpath_old[:T] - Kpath_new[:T]) ** 2).sum()
     # Update guess
-    Kpath_old = xi * Kpath_new + (1 - xi) * Kpath_old
+    Kpath_old[:T] = xi * Kpath_new[:T] + (1 - xi) * Kpath_old[:T]
     print('iteration:', tpi_iter, ' squared distance: ', abs2)
 
 
-# Calculate T
-print(Kpath_old[0:-2])
-k_first = [k for k in Kpath_old if abs(k - K_ss) < 1e-4][0]
-print(k_first)
-T1 = np.where(Kpath_old == k_first)[0][0]
-print(T1)
-k_second = [k for k in Kpath_old if abs(k - K_ss) < 1e-4][1]
-print(k_second)
-T2 = np.where(Kpath_old == k_second)[0][0]
-print(T2)
 plot = True
 if plot:
-    cur_path = os.path.split(os.path.abspath("/Users/yiningmo/Desktop/OG research/ch6/"))[0]
-    output_fldr = 'images'
+    cur_path = os.path.split(os.path.abspath(__file__))[0]
+    output_fldr = "images_1"
     output_dir = os.path.join(cur_path, output_fldr)
     if not os.access(output_dir, os.F_OK):
         os.makedirs(output_dir)
 
-    plt.plot (1 + np.arange(T1 + 5), Kpath_old[0:T1 + 5], 'go--')
+    plt.plot (1 + np.arange(T), Kpath_old[: T], 'go--')
     plt.grid(b=True, which='major', color='0.65', linestyle='-')
     plt.title('Time path of aggregate capital', fontsize=20)
     plt.xlabel(r'$t$')
     plt.ylabel(r'$K$')
-    output_path1 = os.path.join(output_dir, 'kplot1')
-    plt.savefig(output_path1)
-    plt.close()
-
-    plt.plot (1 + np.arange(T2 + 5), Kpath_old[0:T2 + 5], 'go--')
-    plt.grid(b=True, which='major', color='0.65', linestyle='-')
-    plt.title('Time path of aggregate capital', fontsize=20)
-    plt.xlabel(r'$t$')
-    plt.ylabel(r'$K$')
-    output_path2 = os.path.join(output_dir, 'kplot2')
-    plt.savefig(output_path2)
+    output_path = os.path.join(output_dir, 'kplot1')
+    plt.savefig(output_path)
     plt.close()

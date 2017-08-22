@@ -158,8 +158,8 @@ T2 = np.where(Kpath_old == k_second)[0][0]
 print(T2)
 plot = True
 if plot:
-    cur_path = os.path.split(os.path.abspath("/Users/yiningmo/Desktop/OG research/3per/"))[0]
-    output_fldr = 'images'
+    cur_path = os.path.split(os.path.abspath(__file__))[0]
+    output_fldr = "images_1"
     output_dir = os.path.join(cur_path, output_fldr)
     if not os.access(output_dir, os.F_OK):
         os.makedirs(output_dir)
