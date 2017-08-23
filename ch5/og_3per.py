@@ -58,7 +58,7 @@ def errors(bvec, *args):
 # Solve for steady state values
 bvec_guess = np.array([0.1, 0.1])
 b = opt.root(errors, bvec_guess, args = (A, alpha, delta, nvec, beta, sigma))
-print(b)
+print(b.success)
 b_ss = b.x
 b2_ss, b3_ss = b_ss
 K_ss = get_K(b_ss)

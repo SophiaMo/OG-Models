@@ -56,7 +56,7 @@ def errors(bvec, *args):
 # Solve for steady state values
 bvec_guess = 0.1 * np.ones(S - 1)
 b = opt.root(errors, bvec_guess, args = (A, alpha, delta, nvec, beta, sigma))
-print(b)
+print(b.success)
 b_ss = b.x
 K_ss = get_K(b_ss)
 L_ss = get_L(nvec)
@@ -83,7 +83,7 @@ Kpath_old[T:] = K_ss
 
 # Euler function error
 '''
-Calculate lifetime uler function error. Remaining lifetime can be of varying length p.
+Calculate lifetime euler function error. Remaining lifetime can be of varying length p.
 bvec is of length p-1.
 
 '''
@@ -112,7 +112,7 @@ while abs2 > tol and tpi_iter < max_iter:
     # Solve the incomplete remaining lifetime decisions of agents alive
     # in period t=1 but not born in period t=1
     for p in range(2, S):
-        bvec_guess = np.diagonal(b[S - p:, :p - 1]) # Initial guess of the lifetime saving path who has p periods to live
+        bvec_guess = np.diagonal(b[S - p:, :p - 1]) # Initial guess of the lifetime savings path for individual with p periods to live
         beg_wealth = b[S - p - 1, 0]
         args_bp = (beg_wealth, nvec[-p:], beta, sigma, w_path[:p], r_path[:p])
         bp = opt.root(get_errors, bvec_guess, args = (args_bp)).x
