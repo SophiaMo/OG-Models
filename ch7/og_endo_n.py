@@ -135,14 +135,14 @@ tol = 1e-9
 xi = 0.2
 abs_ss = 1
 ss_iter = 0
-K_old = 100.0
-L_old = 50.0
+K_old = 500.0
+L_old = 60.0
 while abs_ss > tol and ss_iter < max_iter:
     ss_iter += 1
     w = get_w(K_old, L_old, (A, alpha))
     r = get_r(K_old, L_old, (A, alpha, delta))
     # Calculate household decisions that make last-period savings zero
-    c1_guess = 1.0
+    c1_guess = 1.4
     c1_args = (r, w, beta, sigma, l_ub, b, upsilon, S)
     result_c1 = opt.root(get_b_last, c1_guess, args = (c1_args))
     if result_c1.success:
@@ -170,9 +170,9 @@ if plot:
     if not os.access(output_dir, os.F_OK):
         os.makedirs(output_dir)
 
-    plt.plot (1 + np.arange(80), bvec, 'go--', color = 'green', label = 'savings')
+    plt.plot (21 + np.arange(80), bvec, 'go--', color = 'green', label = 'savings')
     plt.grid(b=True, which='major', color='0.65', linestyle='-')
-    plt.plot (1 + np.arange(80), cvec, 'go--', color = 'blue', label = 'consumption')
+    plt.plot (21 + np.arange(80), cvec, 'go--', color = 'blue', label = 'consumption')
     plt.grid(b=True, which='major', color='0.65', linestyle='-')
     plt.title('Steady-State distribution of Consumption and Savings', fontsize=10)
     plt.xlabel('age')
@@ -191,3 +191,11 @@ if plot:
     output_path2 = os.path.join(output_dir, 'ss_n')
     plt.savefig(output_path2)
     plt.close()
+
+print("Steady State Capital: {} \n Labor : {}".format(K_old, L_old))
+
+# TPI
+T1 = 250
+T2 = 300
+TPI_tol = 1e-12
+TPI_xi = 0.4
