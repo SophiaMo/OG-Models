@@ -1,40 +1,37 @@
 '''
 ------------------------------------------------------------------------
-This module contains the functions used to solve the time path iteration
-non-steady-state equilibrium for the model with 3-period lived agents
-and exogenous labor from Chapter 5 of the OG textbook.
+This module contains the functions used to solve the transition path
+equilibrium using time path iteration (TPI) for the model with S-period
+lived agents and exogenous labor supply from Chapter 6 of the OG
+textbook.
 
-This Python module calls the following function(s):
+This Python module imports the following module(s):
+    households.py
+    firms.py
+    aggregates.py
+    utilities.py
+
+This Python module defines the following function(s):
     get_path()
-    get_cvec_lf()
     LfEulerSys()
     paths_life()
     get_cbepath()
     get_TPI()
-    ss.print_time()
-
-    get_cvec()
-    get_L()
-    get_K()
-    get_w()
-    get_r()
-    get_Y()
-    get_C()
-    feasible()
-    EulerSys()
-    get_b_errors()
-    get_SS()
 ------------------------------------------------------------------------
 '''
 # Import Packages
 import time
 import numpy as np
 import scipy.optimize as opt
-import SS_ch6 as ss
+import households as hh
+import firms
+import aggregates as aggr
+import utilities as util
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 import sys
 import os
 
@@ -85,47 +82,10 @@ def get_path(x1, xT, T, spec):
         cc = x1
         bb = 2 * (xT - x1) / (T - 1)
         aa = (x1 - xT) / ((T - 1) ** 2)
-        xpath = aa * (np.arange(0, T) ** 2) + (bb * np.arange(0, T)) + cc
+        xpath = (aa * (np.arange(0, T) ** 2) + (bb * np.arange(0, T)) +
+                 cc)
 
     return xpath
-
-
-def get_cvec_lf(rpath, wpath, nvec, bvec):
-    '''
-    --------------------------------------------------------------------
-    Generates vector of remaining lifetime consumptions from individual
-    savings, and the time path of interest rates and the real wages,
-    where p is an integer in [2, S] representing the remaining periods
-    of life
-    --------------------------------------------------------------------
-    INPUTS:
-    rpath = (p,) vector, remaining interest rates
-    wpath = (p,) vector, remaining wages
-    nvec  = (p,) vector, remaining exogenous labor supply
-    bvec  = (p,) vector, remaining savings including initial savings
-
-    OTHER FUNCTIONS AND FILES CALLED BY THIS FUNCTION: None
-
-    OBJECTS CREATED WITHIN FUNCTION:
-    b_s     = (p,) vector, bvec
-    b_sp1   = (p,) vector, last p-1 elements of bvec and 0 in last
-              element
-    cvec    = (p,) vector, remaining consumption by age c_s
-    c_cnstr = (p,) Boolean vector, =True if element c_s <= 0
-
-    FILES CREATED BY THIS FUNCTION: None
-
-    RETURNS: cvec, c_cnstr
-    --------------------------------------------------------------------
-    '''
-    b_s = bvec
-    b_sp1 = np.append(bvec[1:], [0])
-    cvec = (1 + rpath) * b_s + wpath * nvec - b_sp1
-    if cvec.min() <= 0:
-        print('get_cvec_lf() warning: distribution of savings and/or ' +
-              'parameters created c<=0 for some agent(s)')
-    c_cnstr = cvec <= 0
-    return cvec, c_cnstr
 
 
 def LfEulerSys(bvec, *args):
@@ -146,10 +106,13 @@ def LfEulerSys(bvec, *args):
     nvec       = (p,) vector, remaining exogenous labor supply
     rpath      = (p,) vector, interest rates over remaining life
     wpath      = (p,) vector, wages rates over remaining life
+    EulDiff    = Boolean, =True if want difference version of Euler
+                 errors beta*(1+r)*u'(c2) - u'(c1), =False if want ratio
+                 version [beta*(1+r)*u'(c2)]/[u'(c1)] - 1
 
     OTHER FUNCTIONS AND FILES CALLED BY THIS FUNCTION:
-        get_cvec_lf()
-        c5ssf.get_b_errors()
+        c6ssf.get_cvec()
+        c6ssf.get_b_errors()
 
     OBJECTS CREATED WITHIN FUNCTION:
     bvec2        = (p,) vector, remaining savings including initial
@@ -167,11 +130,11 @@ def LfEulerSys(bvec, *args):
     --------------------------------------------------------------------
     '''
     beta, sigma, beg_wealth, nvec, rpath, wpath, EulDiff = args
-    bvec2 = np.append(beg_wealth, bvec)
-    cvec, c_cnstr = get_cvec_lf(rpath, wpath, nvec, bvec2)
-    b_err_params = (beta, sigma)
-    b_err_vec = ss.get_b_errors(b_err_params, rpath[1:], cvec,
-                                c_cnstr, EulDiff)
+    c_args = (nvec, rpath, wpath)
+    cvec = hh.get_cons(bvec, beg_wealth, c_args)
+    b_args = (beta, sigma, rpath[1:], EulDiff)
+    b_err_vec = hh.get_b_errors(cvec, b_args)
+
     return b_err_vec
 
 
@@ -205,8 +168,8 @@ def paths_life(params, beg_age, beg_wealth, nvec, rpath, wpath,
 
     OTHER FUNCTIONS AND FILES CALLED BY THIS FUNCTION:
         LfEulerSys()
-        get_cvec_lf()
-        c4ssf.get_b_errors()
+        c6ssf.get_cvec()
+        c6ssf.get_b_errors()
 
     OBJECTS CREATED WITHIN FUNCTION:
     p            = integer in [2,S], remaining periods in life
@@ -240,13 +203,13 @@ def paths_life(params, beg_age, beg_wealth, nvec, rpath, wpath,
         sys.exit("Beginning age and length of nvec do not match.")
     b_guess = 1.01 * b_init
     eullf_objs = (beta, sigma, beg_wealth, nvec, rpath, wpath, EulDiff)
-    bpath = opt.fsolve(LfEulerSys, b_guess, args=(eullf_objs),
-                       xtol=TPI_tol)
-    cpath, c_cnstr = get_cvec_lf(rpath, wpath, nvec,
-                                 np.append(beg_wealth, bpath))
-    b_err_params = (beta, sigma)
-    b_err_vec = ss.get_b_errors(b_err_params, rpath[1:], cpath,
-                                c_cnstr, EulDiff)
+    results_bp = opt.root(LfEulerSys, b_guess, args=(eullf_objs),
+                          tol=TPI_tol)
+    bpath = results_bp.x
+    c_args = (nvec, rpath, wpath)
+    cpath = hh.get_cons(bpath, beg_wealth, c_args)
+    b_err_vec = results_bp.fun
+
     return bpath, cpath, b_err_vec
 
 
@@ -348,41 +311,18 @@ def get_cbepath(params, rpath, wpath):
     return cpath, bpath, EulErrPath
 
 
-def get_TPI(params, bvec1, graphs):
+def get_TPI(bvec1, params, graphs):
     '''
     --------------------------------------------------------------------
     Generates steady-state time path for all endogenous objects from
     initial state (K1, Gamma1) to the steady state.
     --------------------------------------------------------------------
     INPUTS:
-    params      = length 17 tuple, (S, T, beta, sigma, nvec, L, A,
-                  alpha, delta, b_ss, K_ss, C_ss, maxiter_TPI,
-                  mindist_TPI, xi, TPI_tol, EulDiff)
-    S           = integer in [3,80], number of periods an individual
-                  lives
-    T           = integer > S, number of time periods until steady
-                  state
-    beta        = scalar in (0,1), discount factor for model period
-    sigma       = scalar > 0, coefficient of relative risk aversion
-    nvec        = (S,) vector, exogenous labor supply n_{s,t}
-    L           = scalar > 0, exogenous aggregate labor
-    A           = scalar > 0, total factor productivity parameter in
-                  firms' production function
-    alpha       = scalar in (0,1), capital share of income
-    delta       = scalar in [0,1], model-period depreciation rate of
-                  capital
-    b_ss        = (S-1,) vector, steady-state distribution of savings
-    K_ss        = scalar > 0, steady-state aggregate capital stock
-    C_ss        = scalar > 0, steady-state aggregate consumption
-    maxiter_TPI = integer >= 1, Maximum number of iterations for TPI
-    mindist_TPI = scalar > 0, Convergence criterion for TPI
-    xi          = scalar in (0,1], TPI path updating parameter
-    TPI_tol     = scalar > 0, tolerance level for fsolve's in TPI
-    EulDiff     = Boolean, =True if want difference version of Euler
-                  errors beta*(1+r)*u'(c2) - u'(c1), =False if want
-                  ratio version [beta*(1+r)*u'(c2)]/[u'(c1)] - 1
-    bvec1       = (S-1,) vector, initial period savings distribution
-    graphs      = Boolean, =True if want graphs of TPI objects
+    params = length 16 tuple, (S, T, beta, sigma, nvec, A, alpha, delta,
+             b_ss, K_ss, C_ss, maxiter_TPI, mindist_TPI, TPI_tol, xi,
+             EulDiff)
+    bvec1  = (S-1,) vector, initial period distribution of savings
+    graphs = Boolean, =True if want graphs of TPI objects
 
     OTHER FUNCTIONS AND FILES CALLED BY THIS FUNCTION:
         c5ssf.get_K()
@@ -397,12 +337,36 @@ def get_TPI(params, bvec1, graphs):
 
     OBJECTS CREATED WITHIN FUNCTION:
     start_time  = scalar, current processor time in seconds (float)
+    (S, T, beta, sigma, nvec, A, alpha, delta, b_ss,
+                      K_ss, C_ss, maxiter_TPI, mindist_TPI, TPI_tol,
+                      xi_TPI, TPI_EulDiff)
+    S           = integer in [3,80], number of periods an individual
+                  lives
+    T           = integer > S, number of time periods until steady
+                  state
+    beta        = scalar in (0,1), discount factor for model period
+    sigma       = scalar > 0, coefficient of relative risk aversion
+    nvec        = (S,) vector, exogenous labor supply n_{s,t}
+    A           = scalar > 0, total factor productivity parameter in
+                  firms' production function
+    alpha       = scalar in (0,1), capital share of income
+    delta       = scalar in [0,1], model-period depreciation rate of
+                  capital
+    b_ss        = (S-1,) vector, steady-state distribution of savings
+    K_ss        = scalar > 0, steady-state aggregate capital stock
+    C_ss        = scalar > 0, steady-state aggregate consumption
+    maxiter_TPI = integer >= 1, Maximum number of iterations for TPI
+    mindist_TPI = scalar > 0, Convergence criterion for TPI
+    TPI_tol     = scalar > 0, tolerance level for fsolve's in TPI
+    xi          = scalar in (0,1], TPI path updating parameter
+    EulDiff     = Boolean, =True if want difference version of Euler
+                  errors beta*(1+r)*u'(c2) - u'(c1), =False if want
+                  ratio version [beta*(1+r)*u'(c2)]/[u'(c1)] - 1
+    L           = scalar > 0, exogenous aggregate labor
     K1          = scalar > 0, initial aggregate capital stock
-    K1_cnstr    = Boolean, =True if K1 <= 0
+    K1_cstr     = boolean, =True if K1 <= 0
     Kpath_init  = (T+S-2,) vector, initial guess for the time path
                   of the aggregate capital stock
-    Lpath       = (T+S-2,) vector, exogenous time path for aggregate
-                  labor
     iter_TPI    = integer >= 0, current iteration of TPI
     dist_TPI    = scalar >= 0, distance measure for fixed point
     Kpath_new   = (T+S-2,) vector, new path of the aggregate capital
@@ -447,15 +411,15 @@ def get_TPI(params, bvec1, graphs):
     --------------------------------------------------------------------
     '''
     start_time = time.clock()
-    (S, T, beta, sigma, nvec, L, A, alpha, delta, b_ss, K_ss, C_ss,
-        maxiter_TPI, mindist_TPI, xi, TPI_tol, EulDiff) = params
-    K1, K1_cnstr = ss.get_K(bvec1)
+    (S, T, beta, sigma, nvec, A, alpha, delta, b_ss, K_ss, C_ss,
+        maxiter_TPI, mindist_TPI, TPI_tol, xi, EulDiff) = params
+    L = aggr.get_L(nvec)
+    K1, K1_cstr = aggr.get_K(bvec1)
 
     # Create time paths for K and L
     Kpath_init = np.zeros(T + S - 2)
     Kpath_init[:T] = get_path(K1, K_ss, T, "quadratic")
     Kpath_init[T:] = K_ss
-    Lpath = L * np.ones(T + S - 2)
 
     iter_TPI = int(0)
     dist_TPI = 10.
@@ -468,21 +432,22 @@ def get_TPI(params, bvec1, graphs):
     while (iter_TPI < maxiter_TPI) and (dist_TPI >= mindist_TPI):
         iter_TPI += 1
         Kpath_init = xi * Kpath_new + (1 - xi) * Kpath_init
-        rpath = ss.get_r(r_params, Kpath_init, Lpath)
-        wpath = ss.get_w(w_params, Kpath_init, Lpath)
+        rpath = firms.get_r(Kpath_init, L, r_params)
+        wpath = firms.get_w(Kpath_init, L, w_params)
         cpath, bpath, EulErrPath = get_cbepath(cbe_params, rpath, wpath)
         Kpath_new = np.zeros(T + S - 2)
-        Kpath_new[:T], Kpath_cnstr = ss.get_K(bpath[:, :T])
+        Kpath_new[:T], Kpath_cstr = aggr.get_K(bpath[:, :T])
         Kpath_new[T:] = K_ss * np.ones(S - 2)
-        Kpath_cnstr = np.append(Kpath_cnstr,
-                                np.zeros(S - 2, dtype=bool))
-        Kpath_new[Kpath_cnstr] = 0.1
+        Kpath_cstr = np.append(Kpath_cstr, np.zeros(S - 2, dtype=bool))
+        Kpath_new[Kpath_cstr] = 0.1
         # Check the distance of Kpath_new1
         dist_TPI = ((Kpath_new[1:T] - Kpath_init[1:T]) ** 2).sum()
         # dist_TPI = np.absolute((Kpath_new[1:T] - Kpath_init[1:T]) /
         #                        Kpath_init[1:T]).max()
-        print('iter: ', iter_TPI, ', dist: ', dist_TPI,
-              ',max Eul err: ', np.absolute(EulErrPath).max())
+        print(
+            'TPI iter: ', iter_TPI, ', dist: ', "%10.4e" % (dist_TPI),
+            ', max. abs. Euler errs: ', "%10.4e" %
+            (np.absolute(EulErrPath).max()))
 
     if iter_TPI == maxiter_TPI and dist_TPI > mindist_TPI:
         print('TPI reached maxiter and did not converge.')
@@ -491,9 +456,9 @@ def get_TPI(params, bvec1, graphs):
               'Should probably increase maxiter_TPI.')
     Kpath = Kpath_new
     Y_params = (A, alpha)
-    Ypath = ss.get_Y(Y_params, Kpath, Lpath)
+    Ypath = aggr.get_Y(Kpath, L, Y_params)
     Cpath = np.zeros(T + S - 2)
-    Cpath[:T - 1] = ss.get_C(cpath[:, :T - 1])
+    Cpath[:T - 1] = aggr.get_C(cpath[:, :T - 1])
     Cpath[T - 1:] = C_ss * np.ones(S - 1)
     RCerrPath = (Ypath[:-1] - Cpath[:-1] - Kpath[1:] +
                  (1 - delta) * Kpath[:-1])
@@ -506,7 +471,7 @@ def get_TPI(params, bvec1, graphs):
         'tpi_time': tpi_time}
 
     # Print TPI computation time
-    ss.print_time(tpi_time, 'TPI')
+    util.print_time(tpi_time, 'TPI')
 
     if graphs:
         '''
@@ -520,14 +485,14 @@ def get_TPI(params, bvec1, graphs):
         tgridT      = (T,) vector, time period vector to T-1
         sgrid       = (S,) vector, all ages from 1 to S
         sgrid2      = (S-1,) vector, all ages from 2 to S
-        tmatb       = (2, 18) matrix, time periods for all savings
+        tmatb       = (S-1, T) matrix, time periods for all savings
                       decisions ages (S-1) and time periods (T)
-        smatb       = (2, 18) matrix, ages for all savings decision ages
-                      (S-1) and time periods (T)
-        tmatc       = (3, 17) matrix, time periods for all consumption
+        smatb       = (S-1, T) matrix, ages for all savings decision
+                      ages (S-1) and time periods (T)
+        tmatc       = (3, T-1) matrix, time periods for all consumption
                       decisions ages (S) and time periods (T-1)
-        smatc       = (3, 17) matrix, ages for all consumption decisions
-                      ages (S) and time periods (T-1)
+        smatc       = (3, T-1) matrix, ages for all consumption
+                      decisions ages (S) and time periods (T-1)
         ----------------------------------------------------------------
         '''
         # Create directory if images directory does not already exist
